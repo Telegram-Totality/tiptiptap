@@ -1,7 +1,7 @@
-import os
-os.environ["TOTALITY_ENDPOINT"]="http://localhost:5000"
-
 from decouple import config
+import os
+os.environ["TOTALITY_ENDPOINT"]=config("TOTALITY_ENDPOINT")
+
 from web3 import Web3, HTTPProvider
 BOT_TOKEN=config("BOT_TOKEN")
 
