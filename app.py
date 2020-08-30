@@ -64,7 +64,7 @@ def handle_inline_result(update, context):
 def inlinequery(update, context):
     """Handle the inline query."""
     if not update.effective_user.address:
-        update.inline_query.answer([], switch_pm_text="Get started")
+        update.inline_query.answer([], switch_pm_text="Get started", switch_pm_parameter="start")
         return
 
     query = update.inline_query.query
