@@ -36,7 +36,12 @@ def start(update, context):
     update.message.reply_text('Hi, this bot lets you send payment requests inside Telegram!')
     if not update.effective_user.address:
         update.message.reply_text("You did not link your Ethereum address to your telegram account yet, "
-                "please download the Totality fork or get in contact with @custodialbot")
+                "please download the Totality fork or get in contact with @" + settings.USING_BOT)
+        return
+
+    if update.effective_user.spending_limit < 5:
+        update.message.reply_text("Spending limit is too low, "
+            "please talk with https://t.me/%s?start=limit-%s" % (settings.USING_BOT, settings.TOTALITY_SECRET))
         return
 
     keyboard = [[InlineKeyboardButton("Select chat", switch_inline_query='1')]]
@@ -45,21 +50,29 @@ def start(update, context):
 
 def handle_inline_result(update, context):
     query = update.callback_query
-    if query.data.startswith("tg"):
-        if context.totality["canceled"]:
-            if context.totality["tx"]:
-                return query.edit_message_text(
-                    text="Oops.. you canceled the transaction but: <i>%s</i>, is found" % context.totality["tx"]["tx"],
-                    parse_mode="HTML")
-            return query.edit_message_text(text="The transaction is canceled")
-
-        if not context.totality["tx"]:
-            query.answer(text="Please click on custodial bot")
-        else:
-            query.edit_message_text(
-                text="Great! The transaction is pending. hash: <i>%s</i>" % context.totality["tx"]["tx"],
-                parse_mode="HTML")
+    if not query.data.startswith("tg"):
         return
+    if not context.totality["totality"]:
+        return
+
+    if context.totality["status"] == "NO_ADDRESS":
+        query.answer(text="Please click on custodial bot")
+        return
+
+    if context.totality["canceled"]:
+        if context.totality.get("data"):
+            return query.edit_message_text(
+                    text="Oops.. you canceled the transaction but: <i>%s</i>, is found" % context.totality["data"]["tx"],
+                    parse_mode="HTML")
+        return query.edit_message_text(text="The transaction is canceled")
+
+    if not context.totality["data"]["success"]:
+        query.edit_message_text(text="Something went wrong")
+    else:
+        query.edit_message_text(
+            text="Great! The transaction is pending. hash: <i>%s</i>" % context.totality["data"]["tx"],
+            parse_mode="HTML")
+    return
 
 def inlinequery(update, context):
     """Handle the inline query."""
