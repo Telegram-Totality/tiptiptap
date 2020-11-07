@@ -31,7 +31,7 @@ pycparser==2.20
 pycryptodome==3.9.8
 pyrsistent==0.16.0
 python-decouple==3.3
--e git+git@github.com:Telegram-Totality/python-telegram-bot.git@b0a9a3a3a3fc3bbbb134f4087e975176419b5109#egg=python_telegram_bot
+-e git+git@github.com:Telegram-Totality/python-telegram-bot.git@648ebaea788725ca9eddef951bc9852affd84cc9#egg=python_telegram_bot
 requests==2.24.0
 rlp==1.2.0
 six==1.15.0

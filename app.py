@@ -17,10 +17,20 @@ import settings
 from uuid import uuid4
 from web3 import Web3
 
+import requests
+import secrets
+
 from telegram import InlineQueryResultArticle, ParseMode, InputTextMessageContent
 from telegram import InlineTotalityMarkup
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, InlineQueryHandler, CommandHandler, CallbackQueryHandler
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegram.ext import (
+    Updater,
+    CommandHandler,
+    MessageHandler,
+    Filters,
+    ConversationHandler,
+    CallbackContext
+)
 from telegram.utils.helpers import escape_markdown
 # Enable logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -28,75 +38,52 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 logger = logging.getLogger(__name__)
 
+HANDLE, ERC20 = range(2)
 
 # Define a few command handlers. These usually take the two arguments update and
 # context. Error handlers also receive the raised TelegramError object in error.
 def start(update, context):
     """Send a message when the command /start is issued."""
-    update.message.reply_text('Hi, this bot lets you send payment requests inside Telegram!')
-    if not update.effective_user.address:
-        update.message.reply_text("You did not link your Ethereum address to your telegram account yet, "
-                "please download the Totality fork or get in contact with @custodialbot")
-        return
+    update.message.reply_text('Hi, this bot lets you create a Totality bot')
+    update.message.reply_text("What is the handle of your bot? (e.g. @mycoolbot)")
+    return HANDLE
 
-    keyboard = [[InlineKeyboardButton("Select chat", switch_inline_query='1')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text('Send a payment request inside a chat!', reply_markup=reply_markup)
-
-def handle_inline_result(update, context):
-    query = update.callback_query
-    if query.data.startswith("tg"):
-        if context.totality["canceled"]:
-            if context.totality["tx"]:
-                return query.edit_message_text(
-                    text="Oops.. you canceled the transaction but: <i>%s</i>, is found" % context.totality["tx"]["tx"],
-                    parse_mode="HTML")
-            return query.edit_message_text(text="The transaction is canceled")
-
-        if not context.totality["tx"]:
-            query.answer(text="Please click on custodial bot")
-        else:
-            query.edit_message_text(
-                text="Great! The transaction is pending. hash: <i>%s</i>" % context.totality["tx"]["tx"],
-                parse_mode="HTML")
-        return
-
-def inlinequery(update, context):
-    """Handle the inline query."""
-    if not update.effective_user.address:
-        update.inline_query.answer([], switch_pm_text="Get started", switch_pm_parameter="start")
-        return
-
-    query = update.inline_query.query
-    try:
-        query = round(float(query), 2)
-        if query > 500:
-            query = 500
-    except ValueError:
-        query = 1.0
-
-    keyboard = InlineTotalityMarkup(
-        settings.DAI_CONN.functions.transfer(
-            update.effective_user.address,
-            Web3.toWei(query, "ether")
-        ), # contract function
-        Web3.toWei("2", "gwei"), # gasprice
-        500000 # amount of gas
+def handle(update, context):
+    handle = update.message.text
+    context.user_data["handle"] = handle
+    update.message.reply_text(
+        "Great, which ERC20 do you want to use?",
+        reply_markup=ReplyKeyboardMarkup([['DAI', 'USDC']], one_time_keyboard=True),
     )
+    return ERC20
 
-    results = [
-        InlineQueryResultArticle(
-            id=query,
-            title="Request %s DAI" % query,
-            thumb_url="https://engamb.sfo2.digitaloceanspaces.com/wp-content/uploads/2019/10/09141745/NEW-dai-logo-e1570610882413.png",
-            description="One person is able to pay the requested amount.",
-            input_message_content=InputTextMessageContent("Im requesting %s DAI" % query),
-            reply_markup=keyboard
-        )
-    ]
+def erc20(update, context):
+    user_data = context.user_data
+    handle = user_data.get("handle")
+    if not handle:
+        update.message.reply_text("Something when wrong, please press /cancel")
+        return
+    del user_data["handle"]
 
-    update.inline_query.answer(results, cache_time=10, is_personal=True)
+    secret = secrets.token_urlsafe(58)[:58]
 
+    erc20 = update.message.text
+    r = requests.post("%s/bot" % settings.TOTALITY, data={
+        "secret": secret,
+        "handle": handle,
+        "contact_handle": update.effective_user.username,
+        "erc20": erc20
+    })
+    if r.status_code is not 200:
+        update.message.reply_text("Something when wrong, please press /cancel")
+        return
+
+    update.message.reply_text("Registered bot %s to use %s, please use the following secret: \n\n%s" % (handle, erc20, secret))
+
+    return ConversationHandler.END
+
+def cancel(update, context):
+    return ConversationHandler.END
 
 def main():
     # Create the Updater and pass it your bot's token.
@@ -107,11 +94,16 @@ def main():
     # Get the dispatcher to register handlers
     dp = updater.dispatcher
 
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler('start', start)],
+        states={
+            HANDLE: [MessageHandler(Filters.regex('(@[A-Z a-z])\w+'), handle)],
+            ERC20: [MessageHandler(Filters.regex('^(DAI|USDC)$'), erc20)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+    )
     # on different commands - answer in Telegram
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CallbackQueryHandler(handle_inline_result))
-    # on noncommand i.e message - echo the message on Telegram
-    dp.add_handler(InlineQueryHandler(inlinequery))
+    dp.add_handler(conv_handler)
 
     # Start the Bot
     updater.start_polling()
