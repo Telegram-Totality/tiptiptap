@@ -15,7 +15,38 @@ DAI_CONTRACT = "0x2Aae2f090085265cd77d90b82bb8B7a908738815" # Matic Mumbai dai
 
 
 # Only the transfer function from the erc20 abi for simplicity reasons
-DAI_ABI = [ {
+DAI_ABI = [{
+        "constant": True,
+        "inputs": [],
+        "name": "decimals",
+        "outputs": [
+            {
+                "name": "",
+                "type": "uint8"
+            }
+        ],
+        "payable": False,
+        "stateMutability": "view",
+        "type": "function"
+    },{
+        "constant": True,
+        "inputs": [
+            {
+                "name": "_owner",
+                "type": "address"
+            }
+        ],
+        "name": "balanceOf",
+        "outputs": [
+            {
+                "name": "balance",
+                "type": "uint256"
+            }
+        ],
+        "payable": False,
+        "stateMutability": "view",
+        "type": "function"
+    }, {
     "constant": False,
     "inputs": [
       {
@@ -42,4 +73,7 @@ DAI_ABI = [ {
     "type": "function"
   }
 ]
+
 DAI_CONN = PROVIDER.eth.contract(address=DAI_CONTRACT, abi=DAI_ABI)
+DECMALS = DAI_CONN.functions.decimals().call()
+DIVIDER = int("1" + DECMALS * "0")

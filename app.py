@@ -33,10 +33,14 @@ logger = logging.getLogger(__name__)
 # context. Error handlers also receive the raised TelegramError object in error.
 def start(update, context):
     """Send a message when the command /start is issued."""
-    update.message.reply_text('Hi, this bot lets you send payment requests inside Telegram!')
+    update.message.reply_text('Hi, this bot lets you drop DAI inside Telegram!')
     if not update.effective_user.address:
         update.message.reply_text("You did not link your Ethereum address to your telegram account yet, "
                 "please download the Totality fork or get in contact with @" + settings.USING_BOT)
+        return
+
+    if settings.PROVIDER.eth.getBalance(update.effective_user.address) < 5000000000000000:
+        update.message.reply_text("Not enough matic to send transactions....")
         return
 
     if update.effective_user.spending_limit < 5:
@@ -46,7 +50,7 @@ def start(update, context):
 
     keyboard = [[InlineKeyboardButton("Select chat", switch_inline_query='1')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text('Send a payment request inside a chat!', reply_markup=reply_markup)
+    update.message.reply_text('Drop some DAI inside a chat!', reply_markup=reply_markup)
 
 def handle_inline_result(update, context):
     query = update.callback_query
@@ -56,10 +60,14 @@ def handle_inline_result(update, context):
         return
 
     if context.totality["status"] == "NO_ADDRESS":
-        query.answer(text="Please click on custodial bot")
+        query.answer(text="Something went wrong")
         return
 
-    if context.totality["canceled"]:
+    if context.totality["status"] == "NO_BALANCE":
+        query.edit_message_text(text="Insufficient balance..")
+        return
+
+    if context.totality["status"] == "CANCELED":
         if context.totality.get("data"):
             return query.edit_message_text(
                     text="Oops.. you canceled the transaction but: <i>%s</i>, is found" % context.totality["data"]["tx"],
@@ -83,27 +91,42 @@ def inlinequery(update, context):
     query = update.inline_query.query
     try:
         query = round(float(query), 2)
-        if query > 500:
-            query = 500
+        balance = settings.DAI_CONN.functions.balanceOf(update.effective_user.address).call() / settings.DIVIDER
+        if balance > update.effective_user.spending_limit:
+            balance = update.effective_user.spending_limit
+
+        if query > balance:
+            query = balance
+
+            if query < 0.01:
+                update.inline_query.answer([], switch_pm_text="Give approval", switch_pm_parameter="start")
+                return
+
+        if settings.PROVIDER.eth.getBalance(update.effective_user.address) < 5000000000000000:
+            update.inline_query.answer([], switch_pm_text="Insufficient gas", switch_pm_parameter="gas")
+            return
+
+
     except ValueError:
         query = 1.0
 
     keyboard = InlineTotalityMarkup(
         settings.DAI_CONN.functions.transfer(
-            update.effective_user.address,
+            "user",
             Web3.toWei(query, "ether")
         ), # contract function
         Web3.toWei("2", "gwei"), # gasprice
-        500000 # amount of gas
+        500000, # amount of gas,
+        signer=update.effective_user.id,
     )
 
     results = [
         InlineQueryResultArticle(
             id=query,
-            title="Request %s DAI" % query,
+            title="Drop %s DAI" % query,
             thumb_url="https://engamb.sfo2.digitaloceanspaces.com/wp-content/uploads/2019/10/09141745/NEW-dai-logo-e1570610882413.png",
-            description="One person is able to pay the requested amount.",
-            input_message_content=InputTextMessageContent("Im requesting %s DAI" % query),
+            description="One person is able to claim the dropped amount.",
+            input_message_content=InputTextMessageContent("Im dropping %s DAI" % query),
             reply_markup=keyboard
         )
     ]
